@@ -68,6 +68,9 @@ On the 20 bundled scenarios the engine finds every required remedy with no wrong
 
 **Read these numbers with care.** The scenarios and their gold labels were written by the developer, not an advocate, so the engine scoring well is partly circular. They are a regression check, not evidence of legal accuracy.
 
+## Interface
+Dark landing page with one big prompt, then a split view: consultation on the left, a live case workspace on the right. When the intake only *suspects* a fact (a keyword or the small model), the chat shows it as a dashed suggestion with the reason and its source, and asks you to confirm. If you named two laws, it shows the conflict and asks. The "Understood so far" panel lists every fact as confirmed, needing confirmation, or in conflict.
+
 ## Small model and optional Groq
 - `SLM=auto` (default) loads the ONNX encoder if its files are present and pass a self-test, otherwise the hashing fallback, otherwise lexicon only. `/api/health` shows which is live and peak memory. The Docker build downloads the model with `scripts/fetch_model.sh`; a failed download does not fail the build. If the encoder uses more than 430 MB it is dropped for the hashing fallback (Render free has 512 MB).
 - Calibrate the encoder once on your machine, then commit the result: `sh scripts/fetch_model.sh && PYTHONPATH=backend python -m research.intake_eval --backend onnx --grid --write`.
@@ -84,7 +87,7 @@ Set the health check path to `/api/health` in the Render dashboard. Pushes to `m
 
 ## Known limits
 - The encoder thresholds in `thresholds.json` were fitted on the same 46 developer-written cases they are scored on, so the reported suggestion numbers are optimistic. The onnx thresholds have not been calibrated at all yet.
-- The UI does not yet show suggestions or conflicts; the API returns them in `understood`, `question.suggested` and `question.conflict`.
+- Suggestion reasons (for example "mentions 'nikah'") come from the API in English only. The Hindi and Tamil interface text is the developer's own and needs a native reader.
 - Provisions come from the developer's reading of the statutes. The Muslim, Christian and Parsi venue sections need the closest checking against indiacode.nic.in.
 - Out of scope: foreign decrees, enforcement against a respondent abroad, limitation periods, and drafting of petitions.
 - Hindi and Tamil strings are not native-reviewed.
