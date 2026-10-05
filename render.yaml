@@ -7,7 +7,7 @@ services:
     autoDeployTrigger: commit
     envVars:
       - key: SLM
-        value: auto          # auto | onnx | hash | off
+        value: hash          # hash | off  (onnx needs more than 512 MB)
       - key: GROQ_ENABLE
         value: "0"           # set to 1 only after you decide users' text may go to Groq
       - key: GROQ_API_KEY

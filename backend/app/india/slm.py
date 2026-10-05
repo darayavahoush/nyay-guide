@@ -9,11 +9,12 @@ How it is kept safe:
   * It never decides polarity on a negated clause ("he never beat me" produces no suggestion).
   * The lexicon in intake.py wins whenever it found the fact.
 
-Backends (env SLM = auto | onnx | hash | off, default auto):
-  onnx  multilingual-e5-small, int8, via onnxruntime + tokenizers. Files in SLM_DIR (the Dockerfile fetches them).
-  hash  character n-gram hashing. No download. Handles romanised spelling variants; has little real semantics.
+Backends (env SLM = auto | hash | onnx | off, default auto):
+  hash  character n-gram hashing. No download, about 65 MB total process memory. Handles spelling variants; little real semantics.
+  onnx  multilingual-e5-small, int8, via onnxruntime + tokenizers (requirements-onnx.txt). Needs well over 512 MB in practice:
+        it exceeded Render's free limit, so it is opt-in (SLM=onnx) and meant for a paid instance or your own machine.
   off   lexicon only.
-auto = onnx if its files load and pass a self-test (including a similarity sanity check), otherwise hash.
+auto = hash. The encoder never loads unless you ask for it.
 """
 from __future__ import annotations
 import hashlib, json, os, re, sys, threading, zlib
@@ -124,7 +125,9 @@ class Index:
         if f.exists():
             try: return np.load(f)
             except Exception: pass
-        X = self.emb.embed([r[2] for r in self.rows])
+        import numpy as np
+        texts = [r[2] for r in self.rows]
+        X = np.vstack([self.emb.embed(texts[i:i + 8]) for i in range(0, len(texts), 8)])   # small batches keep peak memory down
         try: SLM_DIR.mkdir(parents=True, exist_ok=True); np.save(f, X)
         except Exception: pass
         return X
@@ -182,7 +185,7 @@ def load(mode: str | None = None) -> dict:
         errors, emb = [], None
         try: import numpy  # noqa: F401
         except Exception as e: STATE.update(backend="lexicon", ready=False, loading=False, error=f"numpy missing: {e}"); return status()
-        if mode in ("auto", "onnx"):
+        if mode == "onnx":
             try:
                 cand = OnnxEmbedder(SLM_DIR)
                 if _sane(cand): emb = cand
@@ -195,7 +198,7 @@ def load(mode: str | None = None) -> dict:
         try:
             _INDEX = Index(emb)
             rss, cap = rss_mb(), float(os.environ.get("SLM_MAX_RSS_MB", "430"))        # Render free = 512 MB hard limit
-            if emb.name == "onnx" and rss and rss > cap and mode == "auto":
+            if emb.name == "onnx" and rss and rss > cap:
                 errors.append(f"onnx used {rss} MB (cap {cap}); fell back to hash"); emb = HashEmbedder(); _INDEX = Index(emb)
         except Exception as e:
             STATE.update(backend="lexicon", ready=False, loading=False, error=f"index: {e}"); return status()
