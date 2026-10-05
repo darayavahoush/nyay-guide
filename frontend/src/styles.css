@@ -1,5 +1,5 @@
-:root{--navy:#0e1a2e;--navy2:#16273f;--navy3:#233a5a;--saffron:#e0912a;--saffron-d:#b9741b;--bg:#f2f4f8;--card:#fff;--line:#dfe4ec;--ink:#14203a;--muted:#5d6b82;--ok:#177a5b;--ok-t:#e1f4ec;--warn:#9a5d00;--warn-t:#fdf0d8;
---display:"Fraunces","Noto Serif Devanagari","Noto Serif Tamil",Georgia,serif;--sans:"Inter","Noto Sans Devanagari","Noto Sans Tamil",system-ui,sans-serif}
+:root{--navy:#0a1830;--navy2:#12264a;--navy3:#213c68;--saffron:#b8923f;--saffron-d:#8f6f2a;--bg:#f4f5f7;--card:#fff;--line:#dfe4ec;--ink:#14203a;--muted:#5d6b82;--ok:#177a5b;--ok-t:#e1f4ec;--warn:#9a5d00;--warn-t:#fdf0d8;
+--display:"Cormorant Garamond","Noto Serif Devanagari","Noto Serif Tamil",Georgia,serif;--sans:"Inter","Noto Sans Devanagari","Noto Sans Tamil",system-ui,sans-serif}
 *{box-sizing:border-box}html,body,#root{margin:0;height:100%}
 body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
 button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
@@ -95,3 +95,41 @@ h3{font:700 19px var(--display);margin:30px 0 12px}
 }
 @media print{body{background:#fff}.rail,.tabs,.ghost,.places,.yn{display:none!important}.app{display:block}.ws{padding:0;overflow:visible}.card{break-inside:avoid}.card .body{display:block}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+
+/* v5: chambers skin */
+:root{--legal:"Libre Baskerville","Noto Serif Devanagari","Noto Serif Tamil",Georgia,serif}
+.rail{background:linear-gradient(180deg,#0a1830,#0d2040);border-right:3px solid var(--saffron)}
+.mark{background:none;border:1.5px solid var(--saffron);color:var(--saffron);border-radius:3px;width:40px;height:40px}
+.name{font:700 22px var(--display);letter-spacing:.01em}
+.seg,.seg button{border-radius:3px}
+.msg{border-radius:3px;font-family:var(--legal);font-size:14.5px;line-height:1.6}
+.msg.agent{background:transparent;border-left:2px solid var(--saffron);padding-left:14px;border-radius:0}
+.msg.you{background:#1a3157;color:#fff;border:1px solid #38568a;font-weight:400}
+.answers button,.primary,.ghost,.examples button,.yn button,.places input,.composer textarea{border-radius:3px!important}
+.answers button{border-color:var(--saffron);color:#f0e4c4}.answers .chip.on{background:var(--saffron);color:#0a1830}
+.primary{background:var(--saffron)!important;color:#0a1830!important}.primary:hover:not(:disabled){background:#cba655!important}
+h2{font:700 34px/1.1 var(--display);letter-spacing:.005em;color:var(--navy)}
+.ws-head{align-items:flex-end;padding-bottom:12px;border-bottom:3px double var(--saffron)}
+.ref{margin:4px 0 0;font:500 12.5px var(--sans);color:var(--muted)}
+.steps .dot{border-radius:3px}.steps .now .dot{background:var(--navy);border-color:var(--navy);color:var(--saffron)}.steps .done .dot{background:var(--saffron);border-color:var(--saffron);color:#0a1830}
+.start h1{font:700 clamp(34px,4vw,52px)/1.05 var(--display);color:var(--navy)}
+.lede{font-family:var(--legal);font-size:16px;line-height:1.7}
+.examples button{font-family:var(--legal);font-size:14.5px;border-left:3px solid var(--saffron)}
+.tags span{border-radius:3px;background:none;color:var(--navy);border:1px solid var(--navy);font-family:var(--legal);font-size:13px}
+.cards{grid-template-columns:1fr;gap:0;border-top:1px solid var(--line)}
+.card{border:0;border-bottom:1px solid var(--line);border-left:0;border-radius:0;box-shadow:none;background:transparent}
+.card summary{grid-template-columns:64px 1fr;column-gap:8px;padding:20px 4px}
+.num{grid-row:1/5;font:700 40px/1 var(--display);color:var(--saffron);text-align:right;padding-right:10px;border-right:1px solid var(--line)}
+.card.conditional .num{color:var(--warn)}
+.sec{border-radius:0;background:none;padding:0;font:italic 400 13.5px var(--legal);color:#7a1f2b}
+h4{font:700 19px/1.3 var(--legal)}
+.forum{font-family:var(--sans)}
+.status{border-radius:0;background:none!important;padding:0;font:600 12.5px var(--sans)}
+.status.eligible:before{content:"● ";color:var(--ok)}.status.conditional:before{content:"◐ ";color:var(--warn)}
+.body{border-top:0;padding:0 4px 20px 72px}
+.body ul{font-family:var(--legal);font-size:13.5px;line-height:1.65}
+h3{font:700 26px var(--display);padding-bottom:6px;border-bottom:1px solid var(--line);margin:36px 0 14px;color:var(--navy)}
+.warn,.prov-note{border-radius:0;border-left:3px solid var(--warn)}
+.line li:before{border-radius:0;transform:rotate(45deg);width:11px;height:11px;left:-7px;background:var(--saffron)}
+.line b{font-family:var(--legal);font-weight:700}
+.notice{border-top:1px solid var(--line);padding-top:12px;font-family:var(--legal);font-size:12px}

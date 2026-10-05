@@ -2,11 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { T, X } from "./strings.js";
 import { agent } from "./api.js";
 
+const ROMAN = ["I","II","III","IV","V","VI","VII","VIII"];
+const Scales = () => (<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v17M7 20h10M4 7h16M4 7l-2.5 6a3 3 0 0 0 5 0L4 7zM20 7l-2.5 6a3 3 0 0 0 5 0L20 7z"/></svg>);
 const LANGS = [["en", "EN"], ["hi", "हि"], ["ta", "த"]];
 const EXTRA = {
-  en: { steps: ["Facts", "Routes", "Documents"], ws: "Case workspace", open_n: "open", sub: "Indian family-law research assistant", consult: "Consultation", matter: "Matter summary", issues: "Routes available", seq: "Recommended sequence", auth: "Authorities", notice: "Notice", prepared: "Prepared", stamp: "Unverified. For review by an advocate.", st: { eligible: "Eligible", conditional: "Conditions open" } },
-  hi: { steps: ["तथ्य", "रास्ते", "दस्तावेज़"], ws: "केस वर्कस्पेस", open_n: "शेष", sub: "भारतीय पारिवारिक कानून शोध सहायक", consult: "परामर्श", matter: "मामले का सार", issues: "उपलब्ध रास्ते", seq: "सुझाया गया क्रम", auth: "प्रमाण-निर्णय", notice: "सूचना", prepared: "तैयार", stamp: "असत्यापित। वकील द्वारा जाँच हेतु।" },
-  ta: { steps: ["உண்மைகள்", "வழிகள்", "ஆவணங்கள்"], ws: "வழக்கு பணியிடம்", open_n: "நிலுவை", sub: "இந்தியக் குடும்பச் சட்ட ஆய்வு உதவியாளர்", consult: "ஆலோசனை", matter: "வழக்குச் சுருக்கம்", issues: "கிடைக்கும் வழிகள்", seq: "பரிந்துரைக்கப்பட்ட வரிசை", auth: "முன்னுதாரணங்கள்", notice: "அறிவிப்பு", prepared: "தயாரிக்கப்பட்டது", stamp: "சரிபார்க்கப்படவில்லை. வழக்கறிஞர் பார்வைக்கு." },
+  en: { memo: "Memorandum of advice", steps: ["Facts", "Routes", "Documents"], ws: "Case workspace", open_n: "open", sub: "Indian family-law research assistant", consult: "Consultation", matter: "Matter summary", issues: "Routes available", seq: "Recommended sequence", auth: "Authorities", notice: "Notice", prepared: "Prepared", stamp: "Unverified. For review by an advocate.", st: { eligible: "Eligible", conditional: "Conditions open" } },
+  hi: { memo: "सलाह ज्ञापन", steps: ["तथ्य", "रास्ते", "दस्तावेज़"], ws: "केस वर्कस्पेस", open_n: "शेष", sub: "भारतीय पारिवारिक कानून शोध सहायक", consult: "परामर्श", matter: "मामले का सार", issues: "उपलब्ध रास्ते", seq: "सुझाया गया क्रम", auth: "प्रमाण-निर्णय", notice: "सूचना", prepared: "तैयार", stamp: "असत्यापित। वकील द्वारा जाँच हेतु।" },
+  ta: { memo: "ஆலோசனைக் குறிப்பு", steps: ["உண்மைகள்", "வழிகள்", "ஆவணங்கள்"], ws: "வழக்கு பணியிடம்", open_n: "நிலுவை", sub: "இந்தியக் குடும்பச் சட்ட ஆய்வு உதவியாளர்", consult: "ஆலோசனை", matter: "வழக்குச் சுருக்கம்", issues: "கிடைக்கும் வழிகள்", seq: "பரிந்துரைக்கப்பட்ட வரிசை", auth: "முன்னுதாரணங்கள்", notice: "அறிவிப்பு", prepared: "தயாரிக்கப்பட்டது", stamp: "சரிபார்க்கப்படவில்லை. வழக்கறிஞர் பார்வைக்கு." },
 };
 
 function Workspace({ t, x, e, turn, onSend, busy, places, setPlaces, onExample }) {
@@ -21,7 +23,7 @@ function Workspace({ t, x, e, turn, onSend, busy, places, setPlaces, onExample }
   return (
     <aside className="ws" aria-label={e.ws}>
       <div className="ws-head">
-        <h2>{e.ws}</h2>
+        <div><h2>{e.memo}</h2><p className="ref">{e.ws}{turn ? " · Ref. NG-" + turn.session_id.slice(0, 6).toUpperCase() : ""} · {new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</p></div>
         {final && <button className="ghost" onClick={() => window.print()}>{x.print}</button>}
       </div>
       <ol className="steps">{e.steps.map((n, i) => <li key={i} className={i < stage ? "done" : i === stage ? "now" : ""}><span className="dot">{i < stage ? "✓" : i + 1}</span>{n}</li>)}</ol>
@@ -36,9 +38,10 @@ function Workspace({ t, x, e, turn, onSend, busy, places, setPlaces, onExample }
       {A && <>
         {!final && <p className="prov-note">{x.provisional}</p>}
         <div className="cards">
-          {A.remedies.map((r) => (
+          {A.remedies.map((r, n) => (
             <details className={"card " + r.status} key={r.id} open={A.remedies.length < 3}>
               <summary>
+                <span className="num" aria-hidden="true">{ROMAN[n]}.</span>
                 <span className="sec">{r.provision.split(";")[0]}</span>
                 <h4>{r.title}</h4>
                 <span className="forum">{r.forum}</span>
@@ -107,7 +110,7 @@ export default function App() {
     <div className={"app view-" + view}>
       <section className="rail" aria-label={e.consult}>
         <div className="rail-top">
-          <div className="brand"><span className="mark" aria-hidden="true">§</span><span className="name">{x.brand}</span></div>
+          <div className="brand"><span className="mark"><Scales /></span><span className="name">{x.brand}</span></div>
           <div className="seg" role="group" aria-label="Language">
             {LANGS.map(([k, l]) => <button key={k} aria-pressed={k === lang} className={k === lang ? "on" : ""} onClick={() => setLang(k)}>{l}</button>)}
           </div>
