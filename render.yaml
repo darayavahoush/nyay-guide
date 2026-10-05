@@ -5,3 +5,10 @@ services:
     plan: free
     healthCheckPath: /api/health
     autoDeployTrigger: commit
+    envVars:
+      - key: SLM
+        value: auto          # auto | onnx | hash | off
+      - key: GROQ_ENABLE
+        value: "0"           # set to 1 only after you decide users' text may go to Groq
+      - key: GROQ_API_KEY
+        sync: false          # secret: set in the dashboard or with the Render CLI, never in git

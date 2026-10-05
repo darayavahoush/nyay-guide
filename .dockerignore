@@ -5,3 +5,5 @@ __pycache__
 wheels
 .git
 *.zip
+backend/models
+.env

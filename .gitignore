@@ -6,3 +6,6 @@ __pycache__
 wheels
 .DS_Store
 .env
+
+backend/models/
+*.npy

@@ -1,29 +1,31 @@
 """India family-law agent: multilingual slot-filling dialogue with information-gain question selection.
-No LLM, no model download. Tools: intake (lexicon), engine (rules), planner (checklists).
+No LLM. Tools: intake (lexicon + optional small encoder, see slm.py), engine (rules), planner (checklists).
 Policy: ask the unknown fact whose possible answers split the engine's outcome into the most distinct
 cases (max Shannon entropy over outcomes, uniform prior over answers); stop when no unknown fact can
 change the outcome. Pure stdlib."""
 from __future__ import annotations
-import math, uuid
+import math, time, uuid
 from collections import Counter, OrderedDict
 from dataclasses import fields
 from .engine import Facts, advise, LAWS
 from .intake import extract
+from . import slm
 
 DOMAIN = {  # slot -> candidate answers used to measure information gain (order = tie-break priority)
-    "mutual_consent": [False, True], "ground": ["cruelty", None], "separated_months": [0, 18, 30], "marriage_years": [0.5, 3],
-    "domestic_violence": [False, True], "divorce_pending_or_decreed": [False, True],
+    "mutual_consent": [False, True], "ground": ["cruelty", "desertion", None], "separated_months": [0, 18, 30], "marriage_years": [0.5, 3],
+    "domestic_violence": [False, True], "divorce_status": ["none", "pending", "decreed"],
     "respondent_has_means": [True, False], "claimant_can_self_maintain": [False, True],
     "claimant_living_in_adultery": [False, True], "claimant_refuses_cohabitation_without_cause": [False, True],
     "separated_by_mutual_consent": [False, True], "child_minor": [True, False], "child_disabled": [False, True],
     "respondent_abroad": [False, True],
 }
 OPTS = {"law": list(LAWS), "claimant": ["wife", "husband", "child", "parent"], "needs": ["divorce", "maintenance", "protection"],
-        "ground": ["cruelty", "desertion", "adultery", "other", "none"], "separated_months": [6, 18, 30], "marriage_years": [0.5, 3]}
+        "ground": ["cruelty", "desertion", "adultery", "other", "none"], "separated_months": [6, 18, 30], "marriage_years": [0.5, 3],
+        "divorce_status": ["none", "pending", "decreed"]}
 PRIOR = {  # P(answer) in DOMAIN order; rare disqualifiers get low prior so they are not asked by default
     "claimant_living_in_adultery": [0.95, 0.05], "claimant_refuses_cohabitation_without_cause": [0.95, 0.05],
     "separated_by_mutual_consent": [0.93, 0.07], "respondent_abroad": [0.92, 0.08], "child_disabled": [0.9, 0.1],
-    "domestic_violence": [0.7, 0.3], "respondent_has_means": [0.8, 0.2], "claimant_can_self_maintain": [0.7, 0.3], "mutual_consent": [0.7, 0.3],
+    "domestic_violence": [0.7, 0.3], "divorce_status": [0.6, 0.25, 0.15], "respondent_has_means": [0.8, 0.2], "claimant_can_self_maintain": [0.7, 0.3], "mutual_consent": [0.7, 0.3],
 }
 THRESH = 0.45  # bits; below this a question is listed as "not checked" instead of asked
 YN = {"en": ("Yes", "No"), "hi": ("हाँ", "नहीं"), "ta": ("ஆம்", "இல்லை")}
@@ -36,6 +38,9 @@ LBL = {
  "ground": {"en": ["Cruelty", "Desertion", "Adultery", "Other reason", "No specific reason"], "hi": ["क्रूरता", "परित्याग", "व्यभिचार", "अन्य कारण", "कोई विशेष कारण नहीं"],
             "ta": ["கொடுமை", "கைவிடுதல்", "கள்ள உறவு", "வேறு காரணம்", "குறிப்பிட்ட காரணம் இல்லை"]},
  "separated_months": {"en": ["Under 1 year", "1 to 2 years", "Over 2 years"], "hi": ["1 साल से कम", "1 से 2 साल", "2 साल से अधिक"], "ta": ["1 ஆண்டுக்குள்", "1–2 ஆண்டுகள்", "2 ஆண்டுகளுக்கு மேல்"]},
+ "divorce_status": {"en": ["No case filed yet", "A case is pending", "A divorce decree has been passed"],
+                    "hi": ["अभी कोई मामला दायर नहीं हुआ", "मामला चल रहा है", "तलाक का फैसला हो चुका है"],
+                    "ta": ["இன்னும் வழக்கு தாக்கல் செய்யப்படவில்லை", "வழக்கு நடைபெறுகிறது", "விவாகரத்து தீர்ப்பு வழங்கப்பட்டுவிட்டது"]},
  "marriage_years": {"en": ["Under 1 year ago", "1 year or more ago"], "hi": ["1 साल से कम पहले", "1 साल या अधिक पहले"], "ta": ["1 ஆண்டுக்குள்", "1 ஆண்டு அல்லது அதற்கு மேல்"]},
 }
 Q = {  # yes = True for every boolean slot
@@ -47,7 +52,7 @@ Q = {  # yes = True for every boolean slot
  "separated_months": ("How long have you been living apart?", "आप कितने समय से अलग रह रहे हैं?", "எவ்வளவு காலமாகப் பிரிந்து வாழ்கிறீர்கள்?"),
  "marriage_years": ("When did you marry?", "आपका विवाह कब हुआ?", "திருமணம் எப்போது நடந்தது?"),
  "domestic_violence": ("Has there been violence or abuse at home?", "क्या घर में हिंसा या दुर्व्यवहार हुआ है?", "வீட்டில் வன்முறை அல்லது துன்புறுத்தல் நடந்ததா?"),
- "divorce_pending_or_decreed": ("Is a divorce case already filed or decided?", "क्या तलाक का मामला पहले से दायर या तय हो चुका है?", "விவாகரத்து வழக்கு ஏற்கனவே தாக்கல் செய்யப்பட்டதா அல்லது முடிந்ததா?"),
+ "divorce_status": ("Where does a divorce case stand?", "तलाक के मामले की क्या स्थिति है?", "விவாகரத்து வழக்கு எந்த நிலையில் உள்ளது?"),
  "respondent_has_means": ("Does the other person earn or own enough to pay?", "क्या दूसरे व्यक्ति के पास देने लायक आय या संपत्ति है?", "மற்றவருக்குக் கொடுக்கும் அளவு வருமானம் அல்லது சொத்து உள்ளதா?"),
  "claimant_can_self_maintain": ("Can the claimant meet their own living costs?", "क्या दावेदार अपना खर्च खुद उठा सकता है?", "கோருபவர் தன் செலவுகளைத் தானே சமாளிக்க முடியுமா?"),
  "claimant_living_in_adultery": ("Is the claimant living with another partner?", "क्या दावेदार किसी और साथी के साथ रह रहा है?", "கோருபவர் வேறொரு துணையுடன் வாழ்கிறாரா?"),
@@ -61,6 +66,10 @@ FRAME = {
  "advice": ("I found {n} possible route(s). Start with: {first}.", "मुझे {n} संभावित रास्ते मिले। शुरुआत करें: {first}।", "{n} சாத்தியமான வழிகள் உள்ளன. முதலில்: {first}."),
  "none": ("No matching route found yet. Tell me more about what you need.", "अभी कोई मेल खाता रास्ता नहीं मिला। बताइए आपको क्या चाहिए।", "பொருந்தும் வழி இன்னும் இல்லை. உங்களுக்கு என்ன வேண்டும் என்று சொல்லுங்கள்."),
 }
+YES_NO_Q = {"divorce_status": ("Is a divorce case already filed or decided?", "क्या तलाक का मामला पहले से दायर या तय हो चुका है?", "விவாகரத்து வழக்கு ஏற்கனவே தாக்கல் செய்யப்பட்டதா அல்லது முடிந்ததா?")}
+NUMERIC = {"separated_months": (0, 1200), "marriage_years": (0, 100)}
+BOOL_SLOTS = [sl for sl in DOMAIN if sl not in NUMERIC and sl not in ("ground", "divorce_status")]
+SESSION_TTL = 2 * 3600  # seconds idle before a session (and the facts typed into it) is dropped
 _L = {"en": 0, "hi": 1, "ta": 2}
 DOCS = {
  "divorce": ["Marriage certificate or proof of marriage", "ID and address proof of both parties", "Details and birth dates of children", "Evidence for the ground (messages, medical or police records, witnesses)", "Dates of marriage, separation and last cohabitation"],
@@ -86,7 +95,7 @@ def gain(facts: dict, slot: str) -> float:
 
 
 def next_slot(facts: dict, known: set, rng=None, thresh=THRESH):
-    if "law" not in facts: return "law"
+    if "law" not in facts or "law" not in known: return "law"
     if "claimant" not in known: return "claimant"
     if "needs" not in known and facts.get("claimant") in ("wife", "husband"): return "needs"
     scored = [(gain(facts, s), s) for s in DOMAIN if s not in known]
@@ -99,7 +108,8 @@ def next_slot(facts: dict, known: set, rng=None, thresh=THRESH):
 
 def unchecked(facts: dict, known: set, lang="en"):
     if "law" not in facts: return []
-    return [{"slot": sl, "prompt": Q[sl][_L[lang]]} for sl in DOMAIN if sl not in known and 1e-9 < gain(facts, sl) <= THRESH]
+    return [{"slot": sl, "prompt": Q[sl][_L[lang]] if sl != "divorce_status" else YES_NO_Q["divorce_status"][_L[lang]]}
+            for sl in DOMAIN if sl not in known and (sl in BOOL_SLOTS or sl == "divorce_status") and 1e-9 < gain(facts, sl) <= THRESH]
 
 
 def make_question(slot, lang, facts=None):
@@ -140,53 +150,112 @@ def plan(advice, lang="en"):
 class Session:
     def __init__(self):
         self.facts, self.known, self.asked, self.lang = {}, set(), [], "en"
-        self.skipped = []
+        self.skipped, self.tentative, self.conflicts = [], {}, {}
         self.sid = uuid.uuid4().hex[:12]
+        self.touched = time.time()
 
 
 STORE: "OrderedDict[str, Session]" = OrderedDict()
 
 
 def _get(sid):
-    if sid and sid in STORE: STORE.move_to_end(sid); return STORE[sid]
+    now = time.time()
+    for k in [k for k, v in STORE.items() if now - v.touched > SESSION_TTL]: del STORE[k]
+    if sid and sid in STORE: STORE.move_to_end(sid); STORE[sid].touched = now; return STORE[sid]
     s = Session(); STORE[s.sid] = s
     while len(STORE) > 500: STORE.popitem(last=False)
     return s
 
 
+def forget(sid) -> bool:
+    """Delete a session and everything typed into it."""
+    return STORE.pop(sid, None) is not None
+
+
+def _bool(v):
+    if isinstance(v, bool): return v
+    if isinstance(v, str) and v.strip().lower() in ("true", "yes", "1", "false", "no", "0"): return v.strip().lower() in ("true", "yes", "1")
+    raise ValueError("expected true or false")
+
+
 def _apply(s: Session, slot, value):
+    """Apply one answer. Raises ValueError on anything that is not a valid answer for that slot."""
     if slot == "places":
+        if not isinstance(value, dict): raise ValueError("places must be an object")
         for k in ("marriage_place", "last_cohabitation_place", "petitioner_residence", "respondent_residence"):
-            if value.get(k): s.facts[k] = str(value[k])[:80]
+            if value.get(k): s.facts[k] = str(value[k]).strip()[:80]
         return
     if slot == "skip":
         if s.asked and s.asked[-1] in DOMAIN: s.known.add(s.asked[-1]); s.skipped.append(s.asked[-1])
         return
-    if slot == "law" and value in LAWS: s.facts["law"] = value
-    elif slot == "claimant" and value in OPTS["claimant"]: s.facts["claimant"] = value
-    elif slot == "needs": s.facts["needs"] = [v for v in value if v in OPTS["needs"]]
-    elif slot == "ground": s.facts["ground"] = None if value == "none" else value
-    elif slot in DOMAIN and slot not in ("ground",): s.facts[slot] = value if not isinstance(value, str) else value.lower() in ("true", "yes", "1")
-    else: return
-    s.known.add(slot)
+    if slot == "law":
+        if value not in LAWS: raise ValueError("unknown law")
+        s.facts["law"] = value
+    elif slot == "claimant":
+        if value not in OPTS["claimant"]: raise ValueError("unknown claimant")
+        s.facts["claimant"] = value
+    elif slot == "needs":
+        if not isinstance(value, list) or not set(value) <= set(OPTS["needs"]): raise ValueError("needs must be a list of known needs")
+        s.facts["needs"] = list(dict.fromkeys(value))
+    elif slot == "ground":
+        if value not in OPTS["ground"]: raise ValueError("unknown ground")
+        s.facts["ground"] = None if value == "none" else value
+    elif slot == "divorce_status":
+        if isinstance(value, bool): value = "filed" if value else "none"   # tick/cross from the 'not yet checked' list
+        if value not in OPTS["divorce_status"] + ["filed"]: raise ValueError("unknown divorce status")
+        s.facts["divorce_status"] = value
+    elif slot in NUMERIC:
+        lo, hi = NUMERIC[slot]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not lo <= value <= hi: raise ValueError(f"{slot} out of range")
+        s.facts[slot] = float(value)
+    elif slot in BOOL_SLOTS: s.facts[slot] = _bool(value)
+    else: raise ValueError("unknown slot")
+    s.known.add(slot); s.tentative.pop(slot, None); s.conflicts.pop(slot, None)
+
+
+LAW_LABEL = {"hindu": "Hindu / Sikh / Jain / Buddhist", "muslim": "Muslim", "christian": "Christian", "parsi": "Parsi", "special_marriage": "Special Marriage Act"}
+
+
+def _absorb(s: Session, r: dict):
+    """Merge one intake result. Confident facts lock in; tentative suggestions never do (the user is still asked)."""
+    for k, v in r["facts"].items():
+        if k == "needs": s.facts["needs"] = sorted(set(s.facts.get("needs", [])) | set(v))
+        else: s.facts[k] = v; s.known.add(k); s.tentative.pop(k, None); s.conflicts.pop(k, None)
+    for k in r.get("not_needs", []):
+        s.facts["needs"] = [n for n in s.facts.get("needs", []) if n != k]
+    for k, v in r.get("tentative", {}).items():
+        if k not in s.known and k != "needs": s.tentative[k] = v
+        elif k == "needs": s.tentative["needs"] = v
+    for k, v in r.get("conflicts", {}).items():
+        if k not in s.known: s.conflicts[k] = v
+
+
+def understood(s: Session) -> list:
+    """What the agent thinks it knows, with how it knows. For the UI to show and let the person correct."""
+    out = [{"slot": k, "value": v, "status": "confirmed" if k in s.known else "stated"} for k, v in s.facts.items() if k != "needs" and k in s.known]
+    out += [{"slot": k, "value": t["value"], "status": "suggested", "why": t.get("why"), "source": t.get("source")} for k, t in s.tentative.items()]
+    out += [{"slot": k, "value": v, "status": "conflict"} for k, v in s.conflicts.items()]
+    return out
 
 
 def step(session_id=None, text=None, answer=None, max_questions=10, lang=None):
     s = _get(session_id)
     if text:
-        r = extract(text); s.lang = r["language"]
-        for k, v in r["facts"].items():
-            if k == "needs": s.facts["needs"] = sorted(set(s.facts.get("needs", [])) | set(v))
-            else: s.facts[k] = v; s.known.add(k)
+        r = slm.augment(text, extract(text)); s.lang = r["language"]; _absorb(s, r)
     if lang in _L: s.lang = lang  # UI language wins over detected language
     if answer: _apply(s, answer.get("slot"), answer.get("value"))
     slot = None if len(s.asked) >= max_questions else next_slot(s.facts, s.known)
-    base = {"session_id": s.sid, "language": s.lang, "facts": s.facts, "asked": len(s.asked)}
+    base = {"session_id": s.sid, "language": s.lang, "facts": s.facts, "asked": len(s.asked),
+            "understood": understood(s), "conflicts": s.conflicts, "engine": slm.status()["backend"]}
     if slot:
         s.asked.append(slot)
         q = make_question(slot, s.lang, s.facts); q["affects"] = why(s.facts, slot)
+        sug = s.tentative.get(slot)
+        if slot == "needs" and sug: q["selected"] = sorted(set(q.get("selected") or []) | set(sug["value"]))
+        elif sug: q["suggested"] = sug
+        if slot == "law" and "law" in s.conflicts: q["conflict"] = s.conflicts["law"]
         prov = None
-        if "law" in s.facts and s.facts.get("needs"):
+        if "law" in s.facts and "law" in s.known and s.facts.get("needs"):
             try: prov = advise(_facts(s.facts))
             except Exception: prov = None
         return {**base, "state": "clarify", "reply": Q[slot][_L[s.lang]], "question": q,

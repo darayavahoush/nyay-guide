@@ -1,25 +1,29 @@
-from typing import Optional
+from typing import Any, Literal, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from .india import Facts, advise, CATALOGUE
 from .india.intake import extract
-from .india.agent import step
+from .india import slm
+from .india.agent import step, forget
 
 router = APIRouter(prefix="/api/india", tags=["india-family-law"])
 
+Law = Literal["hindu", "muslim", "christian", "parsi", "special_marriage"]
+Place = Optional[str]
+
 
 class FactsIn(BaseModel):
-    law: str = Field(description="hindu | muslim | christian | parsi | special_marriage")
-    claimant: str = "wife"
-    needs: list[str] = []
+    law: Law = Field(description="hindu (incl. Sikh, Jain, Buddhist) | muslim | christian | parsi | special_marriage")
+    claimant: Literal["wife", "husband", "child", "parent"] = "wife"
+    needs: list[Literal["divorce", "maintenance", "protection"]] = []
     mutual_consent: bool = False
-    ground: Optional[str] = None
-    marriage_years: Optional[float] = None
-    separated_months: Optional[float] = None
-    marriage_place: Optional[str] = None
-    last_cohabitation_place: Optional[str] = None
-    petitioner_residence: Optional[str] = None
-    respondent_residence: Optional[str] = None
+    ground: Optional[str] = Field(default=None, max_length=80)
+    marriage_years: Optional[float] = Field(default=None, ge=0, le=100)
+    separated_months: Optional[float] = Field(default=None, ge=0, le=1200)
+    marriage_place: Optional[str] = Field(default=None, max_length=80)
+    last_cohabitation_place: Optional[str] = Field(default=None, max_length=80)
+    petitioner_residence: Optional[str] = Field(default=None, max_length=80)
+    respondent_residence: Optional[str] = Field(default=None, max_length=80)
     respondent_abroad: bool = False
     claimant_can_self_maintain: bool = False
     respondent_has_means: bool = True
@@ -29,7 +33,9 @@ class FactsIn(BaseModel):
     domestic_violence: bool = False
     child_minor: bool = True
     child_disabled: bool = False
-    divorce_pending_or_decreed: bool = False
+    divorce_status: Optional[Literal["none", "pending", "decreed", "filed"]] = Field(
+        default=None, description="none | pending | decreed | filed (filed = pending or decreed, unknown which)")
+    divorce_pending_or_decreed: bool = Field(default=False, description="legacy; prefer divorce_status")
 
 
 @router.post("/advise")
@@ -51,16 +57,30 @@ class IntakeIn(BaseModel):
 
 @router.post("/intake")
 def intake(body: IntakeIn):
-    return extract(body.text)
+    return slm.augment(body.text, extract(body.text))
+
+
+class AnswerIn(BaseModel):
+    slot: str = Field(max_length=40)
+    value: Any = None
 
 
 class AgentIn(BaseModel):
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=64)
     text: Optional[str] = Field(default=None, max_length=4000)
-    answer: Optional[dict] = None
+    answer: Optional[AnswerIn] = None
     lang: Optional[str] = Field(default=None, pattern="^(en|hi|ta)$")
 
 
 @router.post("/agent")
 def agent(body: AgentIn):
-    return step(body.session_id, body.text, body.answer, lang=body.lang)
+    try:
+        return step(body.session_id, body.text, body.answer.model_dump() if body.answer else None, lang=body.lang)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@router.delete("/session/{session_id}", status_code=204)
+def delete_session(session_id: str):
+    """Forget a session and everything typed into it."""
+    forget(session_id)

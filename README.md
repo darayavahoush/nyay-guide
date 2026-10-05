@@ -20,11 +20,13 @@ You describe your situation in plain language. The agent reads it, asks only the
 - **Print:** "Save as PDF" prints the memorandum on a white page.
 
 ## How it works
-No LLM and no model downloads. Everything is deterministic and inspectable.
+No generative LLM. The rules decide everything; a small encoder (about 120M parameters) can only *suggest* facts, and the person always confirms them.
 
 | Layer | File | Role |
 |---|---|---|
-| Intake | `backend/app/india/intake.py` | Keyword lexicon in en/hi/ta that guesses the law, claimant, needs and basic facts. Always confirmed with the user. |
+| Intake | `backend/app/india/intake.py` | Lexicon in en/hi/ta and romanised Hinglish with word boundaries, negation ("never beat me"), conflicts ("Hindu ... married a Christian") and durations. Returns confident facts, tentative suggestions and conflicts. |
+| Small model | `backend/app/india/slm.py`, `exemplars.py` | Multilingual encoder (int8 multilingual-e5-small via ONNX, hashing fallback) matches the text to labelled example sentences. Suggestions only, with abstention margins. Add examples in `exemplars.py` to teach it new phrasings. |
+| Groq (optional) | `backend/app/india/groq_assist.py` | Off by default. Used only when nothing else found anything; output is validated and is also a suggestion only. |
 | Rule engine | `backend/app/india/engine.py` | Takes the personal law and facts, returns remedies, venues, open conditions and disclosures. |
 | Agent | `backend/app/india/agent.py` | Picks the next question by information gain (the unknown fact that best splits the engine's outcomes), stops when no fact can change the result, builds the plan and checklists. |
 | API | `backend/app/india_api.py` | FastAPI routes. |
@@ -56,7 +58,8 @@ cd frontend && npm install && npm run dev                   # terminal 2, http:/
 
 ## Test and evaluate
 ```bash
-PYTHONPATH=backend pytest tests -q                  # 19 tests
+PYTHONPATH=backend pytest tests -q                  # 79 tests
+PYTHONPATH=backend python -m research.intake_eval   # intake v1 vs v2 vs small model
 PYTHONPATH=backend python -m research.india_eval    # engine vs baselines
 PYTHONPATH=backend python -m research.agent_eval    # question efficiency
 ```
@@ -64,6 +67,11 @@ PYTHONPATH=backend python -m research.agent_eval    # question efficiency
 On the 20 bundled scenarios the engine finds every required remedy with no wrong-law results, against 0.55 recall (religion-blind) and 0.58 (TF-IDF retrieval) for the baselines. The information-gain policy reaches 0.95 accuracy in 4.7 questions on average, against 15.3 for asking everything.
 
 **Read these numbers with care.** The scenarios and their gold labels were written by the developer, not an advocate, so the engine scoring well is partly circular. They are a regression check, not evidence of legal accuracy.
+
+## Small model and optional Groq
+- `SLM=auto` (default) loads the ONNX encoder if its files are present and pass a self-test, otherwise the hashing fallback, otherwise lexicon only. `/api/health` shows which is live and peak memory. The Docker build downloads the model with `scripts/fetch_model.sh`; a failed download does not fail the build. If the encoder uses more than 430 MB it is dropped for the hashing fallback (Render free has 512 MB).
+- Calibrate the encoder once on your machine, then commit the result: `sh scripts/fetch_model.sh && PYTHONPATH=backend python -m research.intake_eval --backend onnx --grid --write`.
+- Groq: set `GROQ_API_KEY` as a secret in Render and `GROQ_ENABLE=1`. This sends the person's text to a third party, so tell users first. Never put the key in git.
 
 ## Deploy
 `render.yaml` and the `Dockerfile` build the React app and serve it from FastAPI.
@@ -75,6 +83,8 @@ render services create --name nyay-guide --type web_service --runtime docker \
 Set the health check path to `/api/health` in the Render dashboard. Pushes to `main` redeploy automatically.
 
 ## Known limits
+- The encoder thresholds in `thresholds.json` were fitted on the same 46 developer-written cases they are scored on, so the reported suggestion numbers are optimistic. The onnx thresholds have not been calibrated at all yet.
+- The UI does not yet show suggestions or conflicts; the API returns them in `understood`, `question.suggested` and `question.conflict`.
 - Provisions come from the developer's reading of the statutes. The Muslim, Christian and Parsi venue sections need the closest checking against indiacode.nic.in.
 - Out of scope: foreign decrees, enforcement against a respondent abroad, limitation periods, and drafting of petitions.
 - Hindi and Tamil strings are not native-reviewed.

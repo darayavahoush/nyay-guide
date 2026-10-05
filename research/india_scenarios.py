@@ -24,7 +24,7 @@ add("christian_wife_maint", "Christian wife abandoned by husband, no income, nee
 add("christian_mutual", "Christian couple separated three years want mutual divorce",
     dict(law="christian", needs=["divorce"], mutual_consent=True, separated_months=36), ["ida_10a"])
 add("muslim_divorced_wife", "Divorced Muslim woman wants maintenance and her mahr, husband can pay",
-    dict(law="muslim", needs=["maintenance"], divorce_pending_or_decreed=True), ["crpc125", "mwpra_1986"])
+    dict(law="muslim", needs=["maintenance"], divorce_status="decreed"), ["crpc125", "mwpra_1986"])
 add("muslim_husband_talaq", "Muslim husband wants to divorce his wife by talaq",
     dict(law="muslim", claimant="husband", needs=["divorce"]), ["muslim_talaq"])
 add("muslim_wife_divorce", "Muslim wife wants court to dissolve marriage for cruelty",

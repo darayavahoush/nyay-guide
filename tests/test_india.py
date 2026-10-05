@@ -32,10 +32,17 @@ def test_intake_en_husband_mutual():
     f = extract("I am Muslim, my wife and I want a mutual divorce, separated 2 years")["facts"]
     assert f["law"] == "muslim" and f["claimant"] == "husband" and f["mutual_consent"] and f["separated_months"] == 24
 from app.india import agent as A
+def _default(q):
+    if q["slot"] == "needs": return []
+    if q["slot"] in ("separated_months", "marriage_years"): return q["options"][0]["value"]
+    if q["slot"] in ("divorce_status", "ground"): return q["options"][0]["value"]   # none / cruelty
+    return q["options"][-1]["value"] if q["slot"] in ("law", "claimant") else False
+
+
 def _run(text, truth):
     r = A.step(text=text)
     while r["state"] == "clarify":
-        q = r["question"]; r = A.step(r["session_id"], answer={"slot": q["slot"], "value": truth.get(q["slot"], [] if q["slot"] == "needs" else False)})
+        q = r["question"]; r = A.step(r["session_id"], answer={"slot": q["slot"], "value": truth.get(q["slot"], _default(q))})
     return r
 def test_agent_hindu_wife_flow():
     r = _run("I am Hindu, my husband deserted me, I need divorce and maintenance", {"needs": ["divorce", "maintenance"], "claimant": "wife", "marriage_years": 3})
@@ -45,7 +52,7 @@ def test_agent_hindi_language():
     assert r["language"] == "hi" and any("\u0900" <= c <= "\u097f" for c in r["reply"])
 def test_divorced_word_is_not_divorce_need():
     f = extract("Divorced Muslim woman wants maintenance")["facts"]
-    assert f["needs"] == ["maintenance"] and f["divorce_pending_or_decreed"]
+    assert f["needs"] == ["maintenance"] and f["divorce_status"] == "decreed"
 def test_unchecked_listed_not_asked():
     r = _run("I am Christian wife, need maintenance", {"needs": ["maintenance"], "claimant": "wife"})
     assert r["state"] == "advice" and isinstance(r["unchecked"], list)

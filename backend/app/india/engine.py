@@ -8,6 +8,12 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 LAWS = ("hindu", "muslim", "christian", "parsi", "special_marriage")  # hindu = Hindu/Buddhist/Jain/Sikh
+CLAIMANTS = ("wife", "husband", "child", "parent")
+NEEDS = ("divorce", "maintenance", "protection")
+BOOLS = ("mutual_consent", "respondent_abroad", "claimant_can_self_maintain", "respondent_has_means", "claimant_living_in_adultery",
+         "claimant_refuses_cohabitation_without_cause", "separated_by_mutual_consent", "domestic_violence", "child_minor",
+         "child_disabled", "divorce_pending_or_decreed")
+PLACES = ("marriage_place", "last_cohabitation_place", "petitioner_residence", "respondent_residence")
 
 # ---- static catalogue: id -> metadata (also the corpus for the retrieval baseline) ----
 CATALOGUE: dict[str, dict] = {
@@ -97,7 +103,33 @@ class Facts:
     domestic_violence: bool = False
     child_minor: bool = True
     child_disabled: bool = False
-    divorce_pending_or_decreed: bool = False
+    divorce_pending_or_decreed: bool = False   # legacy: filed-or-decided, cannot tell which
+    divorce_status: Optional[str] = None       # none | pending | decreed | filed (filed = unknown which)
+
+    def __post_init__(self):
+        if self.law not in LAWS: raise ValueError(f"law must be one of {LAWS}")
+        if self.claimant not in CLAIMANTS: raise ValueError(f"claimant must be one of {CLAIMANTS}")
+        if not isinstance(self.needs, (list, tuple)) or not set(self.needs) <= set(NEEDS):
+            raise ValueError(f"needs must be a subset of {NEEDS}")
+        if self.divorce_status not in (None, "none", "pending", "decreed", "filed"):
+            raise ValueError("divorce_status must be none, pending, decreed or filed")
+        for name, hi in (("marriage_years", 100), ("separated_months", 1200)):
+            v = getattr(self, name)
+            if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= hi):
+                raise ValueError(f"{name} must be a number between 0 and {hi}")
+        for name in BOOLS:
+            if not isinstance(getattr(self, name), bool): raise ValueError(f"{name} must be true or false")
+        for name in PLACES:
+            v = getattr(self, name)
+            if v is not None and (not isinstance(v, str) or len(v) > 80): raise ValueError(f"{name} must be text up to 80 characters")
+        if self.ground is not None and (not isinstance(self.ground, str) or len(self.ground) > 80):
+            raise ValueError("ground must be short text")
+
+    @property
+    def status(self) -> str:
+        """Divorce proceeding status: none | pending | decreed | filed (filed = the legacy flag, pending-or-decreed unknown)."""
+        if self.divorce_status: return self.divorce_status
+        return "filed" if self.divorce_pending_or_decreed else "none"
 
 
 def _venue(basis, place, note):
@@ -123,6 +155,12 @@ def _mk(rid, venues, met=(), unmet=(), notes=()):
             "authorities": m["authorities"], "verified": False}
 
 
+def _desertion(f: Facts, un: list, cite: str):
+    """Desertion is a divorce ground only after 2 years' continuous desertion before the petition."""
+    if f.ground == "desertion" and (f.separated_months is None or f.separated_months < 24):
+        un.append(f"desertion must be continuous for at least 2 years immediately before the petition ({cite})")
+
+
 def _divorce(f: Facts):
     out, un = [], []
     mc = f.mutual_consent
@@ -134,6 +172,7 @@ def _divorce(f: Facts):
             out.append(_mk("hma_13b", v, unmet=un, notes=["6-month cooling-off may be waived by the court (Amardeep Singh)"]))
         else:
             if not f.ground: un.append("a s.13(1)/13(2) ground (cruelty, desertion, adultery, etc.)")
+            _desertion(f, un, "HMA s.13(1)(ib)")
             if f.marriage_years is not None and f.marriage_years < 1: un.append("s.14: no petition within 1 year of marriage without leave for exceptional hardship")
             out.append(_mk("hma_13", v, unmet=un))
     elif f.law == "special_marriage":
@@ -143,6 +182,7 @@ def _divorce(f: Facts):
             out.append(_mk("sma_28", v, unmet=un))
         else:
             if not f.ground: un.append("a s.27 ground")
+            _desertion(f, un, "SMA s.27(1)(b)")
             if f.marriage_years is not None and f.marriage_years < 1: un.append("s.29: 1-year bar")
             out.append(_mk("sma_27", v, unmet=un))
     elif f.law == "christian":
@@ -153,6 +193,7 @@ def _divorce(f: Facts):
             out.append(_mk("ida_10a", v, unmet=un))
         else:
             if not f.ground: un.append("a s.10 ground")
+            _desertion(f, un, "Indian Divorce Act s.10")
             out.append(_mk("ida_10", v, unmet=un))
     elif f.law == "parsi":
         v = [_venue("parsi_court", None, "Parsi Matrimonial Court with local jurisdiction (Bombay, Calcutta, Madras or district court)")]
@@ -161,6 +202,7 @@ def _divorce(f: Facts):
             out.append(_mk("parsi_32b", v, unmet=un))
         else:
             if not f.ground: un.append("a s.32 ground")
+            _desertion(f, un, "PMDA s.32")
             out.append(_mk("parsi_32", v, unmet=un))
     elif f.law == "muslim":
         if f.claimant == "husband":
@@ -195,36 +237,60 @@ def _s125(f: Facts):
     return _mk("crpc125", v, met, un, notes=["A divorced wife who has not remarried still counts as 'wife'"] if f.claimant == "wife" else [])
 
 
+ALIMONY = {"hindu": "hma_24_25", "special_marriage": "sma_36_37", "christian": "ida_36_37", "parsi": "parsi_39_40"}
+
+
 def advise(f: Facts) -> dict:
-    if f.law not in LAWS: raise ValueError(f"law must be one of {LAWS}")
     out, warn = [], []
     needs = set(f.needs)
-    if "divorce" in needs: out += _divorce(f)
+    st = f.status                                   # none | pending | decreed | filed
+    spouses = f.claimant in ("wife", "husband")
+    if "divorce" in needs and not spouses:
+        warn.append("Divorce is a remedy between spouses; it was ignored because the claimant is a child or parent.")
+    elif "divorce" in needs and st == "decreed":
+        warn.append("You said a divorce decree already exists, so a fresh divorce petition is not available. "
+                    "Maintenance or alimony routes below still apply; ask an advocate about appeal if you object to the decree.")
+    elif "divorce" in needs:
+        out += _divorce(f)
     maint = []
     if "maintenance" in needs or f.claimant in ("child", "parent"):
         r = _s125(f)
-        if r: maint.append(r)
-        pending = f.divorce_pending_or_decreed or "divorce" in needs
-        if f.claimant in ("wife", "husband"):
-            alimony = {"hindu": "hma_24_25", "special_marriage": "sma_36_37", "christian": "ida_36_37", "parsi": "parsi_39_40"}.get(f.law)
+        if r:
+            if f.claimant == "wife" and st in ("decreed", "filed"):
+                r["notes"].append("If she receives the sum due on divorce under her personal law, the order can be cancelled (CrPC s.127(3) = BNSS s.147(3)).")
+            maint.append(r)
+        if spouses:
+            alimony = ALIMONY.get(f.law)
             if alimony:
-                un = [] if pending else ["a matrimonial petition must be pending or decided"]
-                maint.append(_mk(alimony, [_venue("pending_court", None, "the court hearing/deciding the main petition")], unmet=un))
-            if f.law == "hindu" and f.claimant == "wife":
-                maint.append(_mk("hama_18", [_venue("respondent", f.respondent_residence, "CPC s.20: where defendant resides or cause arose")]))
+                if st == "pending": un, notes = [], []
+                elif st == "decreed": un, notes = [], ["The interim stage ended with the decree; permanent alimony can be sought with the decree or any time after it."]
+                elif st == "filed": un, notes = [], ["Confirm whether a decree has already been passed: interim alimony is only available while the case is pending."]
+                elif "divorce" in needs: un, notes = [], ["Apply for interim alimony inside the divorce petition once it is filed."]
+                else: un, notes = ["a matrimonial petition must be pending or decided"], []
+                maint.append(_mk(alimony, [_venue("pending_court", None, "the court hearing/deciding the main petition")], unmet=un, notes=notes))
+            if f.law == "hindu" and f.claimant == "wife" and st != "decreed":
+                un = []
+                if f.claimant_living_in_adultery: un.append("s.18(3): no maintenance if she is unchaste or has converted out of Hinduism")
+                if f.claimant_refuses_cohabitation_without_cause: un.append("s.18(2): living separately needs a justifiable ground (desertion, cruelty, etc.)")
+                if st == "filed": un.append("s.18 is for a subsisting marriage; it does not apply once a divorce decree is passed")
+                maint.append(_mk("hama_18", [_venue("respondent", f.respondent_residence, "CPC s.20: where defendant resides or cause arose")], unmet=un))
             if f.law == "muslim" and f.claimant == "wife":
-                un = [] if f.divorce_pending_or_decreed else ["she must be divorced"]
+                un = [] if st == "decreed" else ["she must be divorced (a decree or a valid talaq)"]
                 maint.append(_mk("mwpra_1986", [_venue("petitioner", f.petitioner_residence, "Magistrate/Family Court of her residence")], unmet=un))
         if f.law == "hindu" and f.claimant in ("child", "parent"):
             maint.append(_mk("hama_20", [_venue("respondent", f.respondent_residence, "CPC s.20")]))
         if f.claimant == "parent":
             maint.append(_mk("senior_citizens", [_venue("petitioner", f.petitioner_residence, "Tribunal where senior citizen resides, or where child/relative resides")]))
     out += maint
-    if f.claimant == "wife" and (f.domestic_violence or "protection" in needs):
+    wants_dv = f.domestic_violence or "protection" in needs
+    if wants_dv and f.claimant != "wife":
+        warn.append("The Domestic Violence Act protects women in a domestic relationship. This tool models it for a wife only; "
+                    "a mother, sister or daughter may also qualify, so ask an advocate.")
+    if f.claimant == "wife" and wants_dv:
         v = [_venue("petitioner", f.petitioner_residence, "s.27: where aggrieved person resides, even temporarily"),
              _venue("respondent", f.respondent_residence, "s.27: where respondent resides"),
              _venue("cause_of_action", None, "s.27: where the violence occurred")]
-        out.append(_mk("dv_act", v, [] if f.domestic_violence else [], [] if f.domestic_violence else ["a domestic-violence allegation"]))
+        out.append(_mk("dv_act", v, [], [] if f.domestic_violence else ["a domestic-violence allegation"]))
     if len(maint) > 1 or (maint and any(r["id"] == "dv_act" for r in out)):
         warn.append("Several maintenance routes overlap. You may file in parallel, but must disclose each and awards are set off (Rajnesh v. Neha).")
     if f.respondent_abroad:
