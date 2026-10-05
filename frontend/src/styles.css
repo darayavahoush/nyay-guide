@@ -84,3 +84,5 @@ h4{font-size:13px;margin:12px 0 4px;color:var(--ink2);font-weight:600}
 }
 @media print{.top,.tabs,.chat,.ghost,.places,.unchecked .yn{display:none!important}.app{max-width:none}.grid{display:block}.case{border:0;overflow:visible}.view-chat .case{display:block}.remedy{break-inside:avoid}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important}}
+.prov-note{margin:0 0 6px;font-size:13px;color:var(--amber);background:var(--amber-t);border-radius:8px;padding:6px 10px}
+.why{margin:0;font-size:13.5px;color:var(--ink2);border-left:3px solid var(--accent);padding-left:10px;max-width:88%}

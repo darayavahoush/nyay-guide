@@ -6,7 +6,9 @@ const LANGS = [["en", "EN"], ["hi", "हि"], ["ta", "த"]];
 
 function Case({ t, x, turn, onSend, busy, places, setPlaces }) {
   const f = (turn && turn.facts) || {};
-  const adv = turn && turn.state === "advice";
+  const final = turn && turn.state === "advice";
+  const A = turn && (turn.advice || turn.provisional);
+  const adv = !!A;
   const chips = [];
   if (f.law) chips.push([t.law, t.laws[f.law]]);
   if (f.claimant) chips.push([t.claimant, t.claimants[f.claimant]]);
@@ -15,15 +17,16 @@ function Case({ t, x, turn, onSend, busy, places, setPlaces }) {
     <aside className="case" aria-label={x.caseTitle}>
       <div className="case-head">
         <h2>{x.caseTitle}</h2>
-        {adv && <button className="ghost" onClick={() => window.print()}>{x.print}</button>}
+        {final && <button className="ghost" onClick={() => window.print()}>{x.print}</button>}
       </div>
       {chips.length === 0 && !adv && <p className="muted">{x.empty}</p>}
       {chips.length > 0 && (
         <dl className="facts">{chips.map(([k, v], i) => <div key={i}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
       )}
       {adv && <>
-        <h3>{x.routes} <span className="count">{turn.advice.remedies.length}</span></h3>
-        {turn.advice.remedies.map((r, i) => (
+        <h3>{x.routes} <span className="count">{A.remedies.length}</span></h3>
+        {!final && <p className="prov-note">{x.provisional}</p>}
+        {A.remedies.map((r, i) => (
           <details className="remedy" key={r.id} open={i === 0}>
             <summary>
               <span className="r-title">{r.title}</span>
@@ -35,28 +38,28 @@ function Case({ t, x, turn, onSend, busy, places, setPlaces }) {
             {r.notes.length > 0 && <ul className="notes">{r.notes.map((n, j) => <li key={j}>{n}</li>)}</ul>}
             {r.authorities.length > 0 && <><h4>{t.authorities}</h4><ul className="auth">{r.authorities.map((a, j) => <li key={j}>{a}</li>)}</ul></>}
           </details>))}
-        {turn.advice.warnings.map((w, i) => <p className="warn" key={i}>{w}</p>)}
-        {turn.plan.length > 0 && <>
+        {A.warnings.map((w, i) => <p className="warn" key={i}>{w}</p>)}
+        {turn.plan && turn.plan.length > 0 && <>
           <h3>{x.plan}</h3>
           <ol className="plan">{turn.plan.map((p) => (
             <li key={p.id}><strong>{p.title}</strong>
               <div className="docs">{t.docs}: {p.docs.join("; ")}</div></li>))}</ol>
         </>}
-        {turn.advice.disclosures.length > 0 && <><h3>{t.disclose}</h3><ul>{turn.advice.disclosures.map((d, i) => <li key={i}>{d}</li>)}</ul></>}
-        {turn.unchecked.length > 0 && <div className="unchecked">
+        {A.disclosures.length > 0 && <><h3>{t.disclose}</h3><ul>{A.disclosures.map((d, i) => <li key={i}>{d}</li>)}</ul></>}
+        {final && turn.unchecked.length > 0 && <div className="unchecked">
           <h3>{t.unchecked}</h3>
           {turn.unchecked.map((u) => (
             <div className="uc" key={u.slot}><span>{u.prompt}</span>
               <span className="yn"><button disabled={busy} onClick={() => onSend({ answer: { slot: u.slot, value: true } }, u.prompt + " ✓")}>✓</button>
                 <button disabled={busy} onClick={() => onSend({ answer: { slot: u.slot, value: false } }, u.prompt + " ✗")}>✗</button></span></div>))}
         </div>}
-        <details className="places"><summary>{t.places}</summary>
+        {final && <details className="places"><summary>{t.places}</summary>
           {turn.place_fields.map((k) => (
             <input key={k} value={places[k] || ""} onChange={(e) => setPlaces({ ...places, [k]: e.target.value })}
               placeholder={{ marriage_place: t.marriagePlace, last_cohabitation_place: t.lastPlace, petitioner_residence: t.myPlace, respondent_residence: t.theirPlace }[k]} />))}
           <button className="primary" disabled={busy} onClick={() => onSend({ answer: { slot: "places", value: places } }, null)}>{t.go}</button>
-        </details>
-        <p className="disc">{turn.advice.disclaimer}</p>
+        </details>}
+        <p className="disc">{A.disclaimer}</p>
       </>}
     </aside>);
 }
@@ -84,7 +87,7 @@ export default function App() {
       setSid(j.session_id);
       setLog((l) => [...l, { who: "agent", text: j.reply }]);
       setTurn(j); setSel(j.question && j.question.selected ? j.question.selected : []);
-      if (j.state === "advice") setView("case");
+      if (j.state === "advice" || j.provisional) setView((v) => (j.state === "advice" ? "case" : v));
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
@@ -123,6 +126,7 @@ export default function App() {
           ) : (
             <div className="log" aria-live="polite">
               {log.map((m, i) => <div key={i} className={"msg " + m.who}>{m.text}</div>)}
+              {q && q.affects && q.affects.length > 0 && <p className="why"><strong>{x.why}</strong> {q.affects.slice(0, 3).join("; ")}</p>}
               {q && (
                 <div className="answers">
                   {q.kind === "choice" && q.options.map((o, i) => (
@@ -139,7 +143,7 @@ export default function App() {
                   {!["law", "claimant", "needs"].includes(q.slot) && <button className="skip" disabled={busy} onClick={() => send({ answer: { slot: "skip", value: null } }, t.skipq)}>{t.skipq}</button>}
                 </div>)}
               {busy && <div className="msg agent dots" aria-label={x.thinking}><i /><i /><i /></div>}
-              {turn && turn.state === "advice" && view === "chat" && <button className="primary see" onClick={() => setView("case")}>{x.routes} ({turn.advice.remedies.length})</button>}
+              {turn && turn.state === "advice" && view === "chat" && <button className="primary see" onClick={() => setView("case")}>{x.routes} ({A.remedies.length})</button>}
               {err && <p className="err" role="alert">{err}</p>}
               <div ref={end} />
             </div>)}

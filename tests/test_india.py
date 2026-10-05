@@ -59,3 +59,24 @@ def test_ui_language_override_and_static():
     from app.india.agent import step
     r = step(None, "Hindu wife, husband left, need maintenance", None, lang="hi")
     assert r["language"] == "hi"
+
+
+def test_skip_does_not_repeat_question():
+    from app.india.agent import step
+    r = step(None, "Hindu wife, need maintenance", None)
+    sid, seen = r["session_id"], []
+    for _ in range(12):
+        if r["state"] != "clarify": break
+        q = r["question"]; seen.append(q["slot"])
+        r = step(sid, None, {"slot": "skip", "value": None} if q["slot"] not in ("law", "claimant", "needs") else {"slot": q["slot"], "value": q["options"][0]["value"] if q["kind"] == "choice" else q["selected"]})
+    assert len(seen) == len(set(seen)), seen
+    assert r["state"] == "advice"
+
+
+def test_provisional_advice_and_why():
+    from app.india.agent import step
+    r = step(None, "Hindu wife, need maintenance and divorce", {"slot": "claimant", "value": "wife"})
+    if r["state"] == "clarify" and r["question"]["slot"] == "needs":
+        r = step(r["session_id"], None, {"slot": "needs", "value": ["divorce", "maintenance"]})
+    assert r["state"] == "clarify" and r["provisional"]["remedies"]
+    assert isinstance(r["question"]["affects"], list)

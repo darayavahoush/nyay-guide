@@ -113,6 +113,19 @@ def make_question(slot, lang, facts=None):
     return {"slot": slot, "kind": "choice", "prompt": Q[slot][i], "options": [{"value": True, "label": y}, {"value": False, "label": n}]}
 
 
+def why(facts, slot):
+    """Titles of remedies whose status or existence changes depending on this unknown fact."""
+    if "law" not in facts or slot not in DOMAIN: return []
+    seen = {}
+    for v in DOMAIN[slot]:
+        try: a = advise(_facts({**facts, slot: v}))
+        except Exception: return []
+        for r in a["remedies"]: seen.setdefault(r["id"], {"t": r["title"], "st": set()})["st"].add(r["status"])
+        for rid in list(seen):
+            if rid not in {r["id"] for r in a["remedies"]}: seen[rid]["st"].add("absent")
+    return [d["t"] for d in seen.values() if len(d["st"]) > 1]
+
+
 def plan(advice, lang="en"):
     steps, rs = [], advice["remedies"]
     order = sorted(rs, key=lambda r: (r["id"] != "dv_act", r["id"] == "crpc125", r["id"].startswith(("hma_24", "sma_36", "ida_36", "parsi_39"))))
@@ -127,6 +140,7 @@ def plan(advice, lang="en"):
 class Session:
     def __init__(self):
         self.facts, self.known, self.asked, self.lang = {}, set(), [], "en"
+        self.skipped = []
         self.sid = uuid.uuid4().hex[:12]
 
 
@@ -145,7 +159,9 @@ def _apply(s: Session, slot, value):
         for k in ("marriage_place", "last_cohabitation_place", "petitioner_residence", "respondent_residence"):
             if value.get(k): s.facts[k] = str(value[k])[:80]
         return
-    if slot == "skip": return
+    if slot == "skip":
+        if s.asked and s.asked[-1] in DOMAIN: s.known.add(s.asked[-1]); s.skipped.append(s.asked[-1])
+        return
     if slot == "law" and value in LAWS: s.facts["law"] = value
     elif slot == "claimant" and value in OPTS["claimant"]: s.facts["claimant"] = value
     elif slot == "needs": s.facts["needs"] = [v for v in value if v in OPTS["needs"]]
@@ -168,11 +184,17 @@ def step(session_id=None, text=None, answer=None, max_questions=10, lang=None):
     base = {"session_id": s.sid, "language": s.lang, "facts": s.facts, "asked": len(s.asked)}
     if slot:
         s.asked.append(slot)
-        return {**base, "state": "clarify", "reply": Q[slot][_L[s.lang]], "question": make_question(slot, s.lang, s.facts)}
+        q = make_question(slot, s.lang, s.facts); q["affects"] = why(s.facts, slot)
+        prov = None
+        if "law" in s.facts and s.facts.get("needs"):
+            try: prov = advise(_facts(s.facts))
+            except Exception: prov = None
+        return {**base, "state": "clarify", "reply": Q[slot][_L[s.lang]], "question": q,
+                "provisional": prov, "plan": plan(prov, s.lang) if prov else [], "skipped": s.skipped}
     if "law" not in s.facts:
         return {**base, "state": "clarify", "reply": Q["law"][_L[s.lang]], "question": make_question("law", s.lang)}
     adv = advise(_facts(s.facts)); n = len(adv["remedies"])
     reply = FRAME["none"][_L[s.lang]] if not n else FRAME["advice"][_L[s.lang]].format(n=n, first=adv["remedies"][0]["title"])
     return {**base, "state": "advice", "reply": reply, "advice": adv, "plan": plan(adv, s.lang),
-            "unchecked": unchecked(s.facts, s.known, s.lang),
+            "unchecked": unchecked(s.facts, s.known, s.lang), "skipped": s.skipped,
             "place_fields": ["marriage_place", "last_cohabitation_place", "petitioner_residence", "respondent_residence"]}
