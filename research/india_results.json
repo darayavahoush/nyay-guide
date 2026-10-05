@@ -1,0 +1,20 @@
+{
+ "engine": {
+  "required_recall": 1.0,
+  "wrong_law_rate": 0.0,
+  "venue_recall": 1.0,
+  "venue_violation_rate": 0.0
+ },
+ "B0_religion_blind": {
+  "required_recall": 0.55,
+  "wrong_law_rate": 0.3,
+  "venue_recall": 0.405,
+  "venue_violation_rate": 0.0
+ },
+ "B1_tfidf_retrieval": {
+  "required_recall": 0.579,
+  "wrong_law_rate": 0.45,
+  "venue_recall": 0.143,
+  "venue_violation_rate": 0.0
+ }
+}
