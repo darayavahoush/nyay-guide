@@ -158,12 +158,54 @@ class Session:
 STORE: "OrderedDict[str, Session]" = OrderedDict()
 
 
-def _get(sid):
+def _get(sid, snap=None):
     now = time.time()
     for k in [k for k, v in STORE.items() if now - v.touched > SESSION_TTL]: del STORE[k]
     if sid and sid in STORE: STORE.move_to_end(sid); STORE[sid].touched = now; return STORE[sid]
-    s = Session(); STORE[s.sid] = s
+    s = restore(sid, snap) if (sid and snap) else Session(); STORE[s.sid] = s
     while len(STORE) > 500: STORE.popitem(last=False)
+    return s
+
+
+PLACE_KEYS = ("marriage_place", "last_cohabitation_place", "petitioner_residence", "respondent_residence")
+
+
+def snapshot(s: Session) -> dict:
+    """Everything needed to rebuild a session after a server restart. Sent to the browser and sent back by it; nothing is stored server-side."""
+    return {"facts": s.facts, "known": sorted(s.known), "asked": s.asked[-40:], "skipped": s.skipped[-40:], "lang": s.lang,
+            "tentative": s.tentative, "conflicts": s.conflicts}
+
+
+def _short(v):
+    return isinstance(v, (str, bool, int, float)) and (not isinstance(v, str) or len(v) <= 120)
+
+
+def restore(sid, snap) -> Session:
+    """Rebuild a session from an untrusted snapshot. Every fact is re-validated through _apply; anything invalid is dropped."""
+    s = Session()
+    if isinstance(sid, str) and 0 < len(sid) <= 64: s.sid = sid
+    if not isinstance(snap, dict): return s
+    facts = snap.get("facts") if isinstance(snap.get("facts"), dict) else {}
+    known = set(snap.get("known") or []) if isinstance(snap.get("known"), list) else set()
+    for slot in ("law", "claimant", "needs", "ground", "divorce_status", *NUMERIC, *BOOL_SLOTS):
+        if slot in facts and (slot in known or slot == "needs"):
+            try: _apply(s, slot, facts[slot])
+            except (ValueError, TypeError): pass
+    places = {k: facts[k] for k in PLACE_KEYS if isinstance(facts.get(k), str)}
+    if places: _apply(s, "places", places)
+    if snap.get("lang") in _L: s.lang = snap["lang"]
+    s.asked = [a for a in (snap.get("asked") or []) if isinstance(a, str) and len(a) <= 40][-40:] if isinstance(snap.get("asked"), list) else []
+    s.skipped = [a for a in (snap.get("skipped") or []) if isinstance(a, str) and len(a) <= 40][-40:] if isinstance(snap.get("skipped"), list) else []
+    s.known |= {k for k in s.skipped if k in DOMAIN}
+    tent = snap.get("tentative") if isinstance(snap.get("tentative"), dict) else {}
+    for k, t in tent.items():
+        if (k in DOMAIN or k in ("law", "claimant", "needs")) and k not in s.known and isinstance(t, dict) and "value" in t:
+            v = t["value"]
+            if (isinstance(v, list) and all(_short(x) for x in v[:5])) or _short(v):
+                s.tentative[k] = {"value": v, "why": str(t.get("why") or "")[:120], "source": str(t.get("source") or "")[:40]}
+    conf = snap.get("conflicts") if isinstance(snap.get("conflicts"), dict) else {}
+    for k, v in conf.items():
+        if k in ("law", "claimant") and k not in s.known and isinstance(v, list) and all(isinstance(x, str) for x in v[:6]): s.conflicts[k] = v[:6]
     return s
 
 
@@ -238,8 +280,14 @@ def understood(s: Session) -> list:
     return out
 
 
-def step(session_id=None, text=None, answer=None, max_questions=10, lang=None):
-    s = _get(session_id)
+def step(session_id=None, text=None, answer=None, max_questions=10, lang=None, snap=None):
+    r = _step(session_id, text, answer, max_questions, lang, snap)
+    r["snapshot"] = snapshot(STORE[r["session_id"]])
+    return r
+
+
+def _step(session_id, text, answer, max_questions, lang, snap):
+    s = _get(session_id, snap)
     if text:
         r = slm.augment(text, extract(text)); s.lang = r["language"]; _absorb(s, r)
     if lang in _L: s.lang = lang  # UI language wins over detected language

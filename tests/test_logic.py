@@ -204,3 +204,35 @@ def test_tamil_adikkadi_means_often_not_beating():
 
 def test_do_not_want_divorce_is_not_a_refusal_by_the_spouse():
     assert "mutual_consent" not in extract("I do not want divorce, I only need maintenance")["facts"]
+
+# ---- sessions survive a server restart (Render free restarts and spins down)
+def test_session_survives_restart_via_snapshot():
+    r = A.step(text="I am a Hindu wife. My husband left two years ago and I need maintenance")
+    sid, snap = r["session_id"], r["snapshot"]
+    while r["state"] == "clarify" and r["facts"].get("claimant") is None:
+        q = r["question"]; r = A.step(sid, answer={"slot": q["slot"], "value": q["options"][0]["value"]}, snap=r["snapshot"])
+    snap = r["snapshot"]; A.STORE.clear()                                    # the server restarts
+    r2 = A.step(sid, answer={"slot": "places", "value": {"petitioner_residence": "Trichy"}}, snap=snap)
+    assert r2["facts"]["law"] == "hindu" and r2["facts"]["petitioner_residence"] == "Trichy"
+    assert not (r2["state"] == "clarify" and r2["question"]["slot"] == "law")      # does not start over
+
+def test_without_snapshot_a_lost_session_starts_over():
+    A.STORE.clear(); r = A.step("lost-id", answer={"slot": "places", "value": {"marriage_place": "x"}})
+    assert r["state"] == "clarify" and r["question"]["slot"] == "law"
+
+def test_hostile_snapshot_is_validated():
+    snap = {"facts": {"law": "martian", "needs": ["custody"], "separated_months": -5, "marriage_place": "x" * 500, "evil": 1, "domestic_violence": "yes"},
+            "known": ["law", "separated_months", "domestic_violence"], "asked": ["a" * 500, 5], "tentative": {"law": {"value": {"a": 1}}, "ground": {"value": "cruelty", "why": "w" * 999}},
+            "conflicts": {"law": "nope"}, "lang": "xx"}
+    r = A.step("hostile-1", text=None, answer=None, snap=snap)
+    assert "law" not in r["facts"] and "evil" not in r["facts"] and r["state"] == "clarify" and r["language"] == "en"
+    assert all(len(str(v)) <= 80 for k, v in r["facts"].items() if isinstance(v, str))
+    assert len(r["snapshot"]["tentative"].get("ground", {}).get("why", "")) <= 120
+
+def test_api_roundtrip_and_head_route():
+    j = c.post("/api/india/agent", json={"text": "Hindu wife need maintenance"}).json()
+    assert "snapshot" in j
+    A.STORE.clear()
+    assert c.post("/api/india/agent", json={"session_id": j["session_id"], "snapshot": j["snapshot"], "answer": {"slot": "places", "value": {"marriage_place": "Chennai"}}}).status_code == 200
+    assert c.post("/api/india/agent", json={"snapshot": "not-a-dict"}).status_code == 422          # shape errors are 422 with a reason
+    assert c.head("/api/health").status_code in (200, 405)

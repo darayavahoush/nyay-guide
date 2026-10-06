@@ -29,7 +29,7 @@ DIST = Path(os.environ.get("FRONTEND_DIST", Path(__file__).resolve().parents[2] 
 if DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
-    @app.get("/{path:path}", include_in_schema=False)
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def spa(path: str):
         f = (DIST / path).resolve()
         if path and f.is_file() and DIST.resolve() in f.parents:

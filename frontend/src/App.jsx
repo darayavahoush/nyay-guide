@@ -116,6 +116,7 @@ export default function App() {
   const [lang, setLang] = useState("en");
   const t = T[lang], x = X[lang], e = { ...EXTRA.en, ...EXTRA[lang] };
   const [sid, setSid] = useState(null);
+  const [snap, setSnap] = useState(null);
   const [log, setLog] = useState([]);
   const [turn, setTurn] = useState(null);
   const [text, setText] = useState("");
@@ -132,7 +133,8 @@ export default function App() {
     setBusy(true); setErr("");
     if (shown) setLog((l) => [...l, { who: "you", text: shown }]);
     try {
-      const j = await agent({ session_id: sid, lang, ...body });
+      const j = await agent({ session_id: sid, lang, snapshot: snap, ...body });
+      setSnap(j.snapshot);
       setSid(j.session_id);
       setLog((l) => [...l, { who: "agent", text: j.reply }]);
       setTurn(j); setSel(j.question && j.question.selected ? j.question.selected : []);
@@ -141,7 +143,7 @@ export default function App() {
     setBusy(false);
   };
   const submit = () => { const v = text.trim(); if (v) { send({ text: v }, v); setText(""); } };
-  const restart = () => { setSid(null); setLog([]); setTurn(null); setPlaces({}); setSel([]); setErr(""); setView("chat"); };
+  const restart = () => { setSid(null); setSnap(null); setLog([]); setTurn(null); setPlaces({}); setSel([]); setErr(""); setView("chat"); };
   const q = turn && turn.state === "clarify" ? turn.question : null;
 
   const landing = !turn && log.length === 0 && !busy;

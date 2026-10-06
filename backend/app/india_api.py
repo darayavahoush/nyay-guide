@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Literal, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -70,13 +71,16 @@ class AgentIn(BaseModel):
     text: Optional[str] = Field(default=None, max_length=4000)
     answer: Optional[AnswerIn] = None
     lang: Optional[str] = Field(default=None, pattern="^(en|hi|ta)$")
+    snapshot: Optional[dict] = None     # sent back by the browser so a restarted server can rebuild the session
 
 
 @router.post("/agent")
 def agent(body: AgentIn):
     try:
-        return step(body.session_id, body.text, body.answer.model_dump() if body.answer else None, lang=body.lang)
+        return step(body.session_id, body.text, body.answer.model_dump() if body.answer else None, lang=body.lang, snap=body.snapshot)
     except ValueError as e:
+        a = body.answer
+        logging.getLogger("uvicorn.error").warning("agent 422: %s (slot=%s)", e, a.slot if a else None)   # never logs the person's text or answers
         raise HTTPException(422, str(e))
 
 
