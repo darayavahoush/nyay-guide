@@ -25,6 +25,14 @@ const UI = {
   ta: { weRead: "உங்கள் வார்த்தைகளிலிருந்து இதைப் புரிந்துகொண்டோம்", yes: "ஆம், சரி", no: "இல்லை, நான் தேர்வு செய்கிறேன்", src: { "keyword-hint": "சொல் குறிப்பு", slm: "சிறிய மாடல்", groq: "ஹோஸ்ட் மாடல்" }, conflict: "நீங்கள் ஒன்றுக்கு மேல் குறிப்பிட்டீர்கள்:", pick: "திருமணத்துக்குப் பொருந்துவதைத் தேர்வு செய்யுங்கள்.",
         understood: "இதுவரை புரிந்தது", suggested: "உங்கள் உறுதிப்படுத்தல் தேவை", confirmed: "உறுதி", conflictS: "முரண்பாடு", preselected: "உங்கள் வார்த்தைகளிலிருந்து முன்தேர்வு. தவறெனில் மாற்றுங்கள்.", start: "தொடங்குங்கள்", privacy: "இந்த அமர்வுக்குப் பின் எதுவும் சேமிக்கப்படாது. அமர்வுகள் 2 மணி நேரத்தில் நீக்கப்படும்." },
 };
+const BASIS = {
+  en: { respondent: "where the other person lives", petitioner: "where you live", marriage: "where you married", last_cohabitation: "where you last lived together", cause_of_action: "where it happened", pending_court: "the court hearing your main case", parsi_court: "the Parsi Matrimonial Court" },
+  hi: { respondent: "जहाँ दूसरा व्यक्ति रहता है", petitioner: "जहाँ आप रहते हैं", marriage: "जहाँ विवाह हुआ", last_cohabitation: "जहाँ आखिरी बार साथ रहे", cause_of_action: "जहाँ घटना हुई", pending_court: "वह अदालत जहाँ मुख्य मामला चल रहा है", parsi_court: "पारसी विवाह न्यायालय" },
+  ta: { respondent: "மற்றவர் வசிக்கும் இடம்", petitioner: "நீங்கள் வசிக்கும் இடம்", marriage: "திருமணம் நடந்த இடம்", last_cohabitation: "கடைசியாக சேர்ந்து வாழ்ந்த இடம்", cause_of_action: "சம்பவம் நடந்த இடம்", pending_court: "முக்கிய வழக்கு நடைபெறும் நீதிமன்றம்", parsi_court: "பார்சி திருமண நீதிமன்றம்" },
+};
+Object.assign(UI.en, { whereTitle: "Where to file, for your places", whereHint: "Any one of these can work for that route. Choose the most convenient and ask the District Legal Services Authority which court covers it.", whereAdd: "Add where you and the other person live, and where you married, to see the places that apply.", placesOpen: "Your places" });
+Object.assign(UI.hi, { whereTitle: "आपके स्थानों के अनुसार कहाँ दायर करें", whereHint: "इनमें से कोई भी उस रास्ते के लिए चल सकता है। सबसे सुविधाजनक चुनें और ज़िला विधिक सेवा प्राधिकरण से पूछें कि कौन सी अदालत उसे देखती है।", whereAdd: "लागू होने वाले स्थान देखने के लिए अपना और दूसरे व्यक्ति का निवास तथा विवाह का स्थान जोड़ें।", placesOpen: "आपके स्थान" });
+Object.assign(UI.ta, { whereTitle: "உங்கள் இடங்களுக்கு ஏற்ப எங்கு தாக்கல் செய்யலாம்", whereHint: "இவற்றில் ஏதாவது ஒன்று அந்த வழிக்குப் பொருந்தலாம். வசதியானதைத் தேர்வு செய்து, எந்த நீதிமன்றம் அதை உள்ளடக்கும் என மாவட்ட சட்ட சேவைகள் ஆணையத்திடம் கேளுங்கள்.", whereAdd: "பொருந்தும் இடங்களைக் காண, உங்கள் மற்றும் மற்றவரின் வசிப்பிடம், திருமண இடத்தைச் சேர்க்கவும்.", placesOpen: "உங்கள் இடங்கள்" });
 const srcKey = (s) => (s || "").startsWith("slm") ? "slm" : (s || "").startsWith("groq") ? "groq" : "keyword-hint";
 function fmt(t, lang, slot, v) {
   if (slot === "law") return t.laws[v] || v;
@@ -56,6 +64,7 @@ function Understood({ t, lang, turn, onSend, busy }) {
 }
 
 function Workspace({ t, x, e, lang, turn, onSend, busy, places, setPlaces, onExample }) {
+  const hasPlaces = Object.values(places || {}).some((v) => v && String(v).trim());
   const f = (turn && turn.facts) || {};
   const final = turn && turn.state === "advice";
   const A = turn && (turn.advice || turn.provisional);
@@ -74,6 +83,18 @@ function Workspace({ t, x, e, lang, turn, onSend, busy, places, setPlaces, onExa
       <Understood t={t} lang={lang} turn={turn} onSend={onSend} busy={busy} />
       {A && <>
         {!final && <p className="prov-note">{x.provisional}</p>}
+        {final && <details className="places" open><summary>{t.places}</summary>
+          {turn.place_fields.map((k) => <input key={k} value={places[k] || ""} onChange={(ev) => setPlaces({ ...places, [k]: ev.target.value })}
+            placeholder={{ marriage_place: t.marriagePlace, last_cohabitation_place: t.lastPlace, petitioner_residence: t.myPlace, respondent_residence: t.theirPlace }[k]} />)}
+          <button className="primary" disabled={busy} onClick={() => onSend({ answer: { slot: "places", value: places } }, null).then(() => setTimeout(() => { const el = document.querySelector(".where"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 80))}>{t.go}</button>
+        </details>}
+        {A.remedies.length > 0 && <section className="where" aria-label={UI[lang].whereTitle}><h3>{UI[lang].whereTitle}</h3>
+          {A.remedies.map((r) => (<div className="w-row" key={r.id}>
+            <div className="w-h"><b>{r.title}</b><span className="forum">{r.forum}</span></div>
+            <div className="w-chips">{r.venues.map((v, j) => v.place
+              ? <span className="w-chip" key={j}><b>{v.place}</b><i>{BASIS[lang][v.basis] || v.basis}</i></span>
+              : <span className="w-chip open" key={j}><i>{BASIS[lang][v.basis] || v.basis}</i></span>)}</div></div>))}
+          <p className="w-note">{hasPlaces ? UI[lang].whereHint : UI[lang].whereAdd}</p></section>}
         <div className="cards">
           {A.remedies.map((r, n) => (
             <details className={"card " + r.status} key={r.id} open={A.remedies.length < 3}>
@@ -102,11 +123,6 @@ function Workspace({ t, x, e, lang, turn, onSend, busy, places, setPlaces, onExa
           {turn.unchecked.map((u) => <div className="uc" key={u.slot}><span>{u.prompt}</span>
             <span className="yn"><button disabled={busy} onClick={() => onSend({ answer: { slot: u.slot, value: true } }, u.prompt + " ✓")}>✓</button>
               <button disabled={busy} onClick={() => onSend({ answer: { slot: u.slot, value: false } }, u.prompt + " ✗")}>✗</button></span></div>)}</>}
-        {final && <details className="places"><summary>{t.places}</summary>
-          {turn.place_fields.map((k) => <input key={k} value={places[k] || ""} onChange={(ev) => setPlaces({ ...places, [k]: ev.target.value })}
-            placeholder={{ marriage_place: t.marriagePlace, last_cohabitation_place: t.lastPlace, petitioner_residence: t.myPlace, respondent_residence: t.theirPlace }[k]} />)}
-          <button className="primary" disabled={busy} onClick={() => onSend({ answer: { slot: "places", value: places } }, null)}>{t.go}</button>
-        </details>}
         <p className="notice"><b>{e.stamp}</b> {A.disclaimer}</p>
       </>}
     </aside>);

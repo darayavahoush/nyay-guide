@@ -234,6 +234,8 @@ def _s125(f: Facts):
         if f.claimant_can_self_maintain: un.append("parent must be unable to maintain themselves")
     v = [_venue("respondent", f.respondent_residence, "s.126 CrPC / s.145 BNSS: where respondent resides or is"),
          _venue("last_cohabitation", f.last_cohabitation_place, "s.126: where he last resided with his wife")]
+    if f.claimant == "wife":    # s.126(1)(b): "where he or his wife resides", so her own residence counts
+        v.insert(1, _venue("petitioner", f.petitioner_residence, "s.126(1)(b) CrPC / s.145 BNSS: where he or his wife resides (her own residence counts)"))
     return _mk("crpc125", v, met, un, notes=["A divorced wife who has not remarried still counts as 'wife'"] if f.claimant == "wife" else [])
 
 

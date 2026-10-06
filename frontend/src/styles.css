@@ -81,6 +81,15 @@ h1,h2,h3,h4,h5,p,ul,ol{margin:0}ul,ol{padding:0;list-style:none}
 .u-suggested{border:1px dashed var(--red)}.u-suggested .u-s{color:var(--red)}.u-conflict{border-color:var(--warn)}.u-conflict .u-s{color:var(--warn)}
 .und li button{grid-row:2/4;grid-column:2;align-self:center;width:2.1rem;height:2.1rem;border-radius:50%;border:1px solid var(--red);background:none;color:var(--red);font-weight:700}.und li button:hover:not(:disabled){background:var(--red);color:#fff}
 
+/* where to file */
+.where{margin:0 0 1.6rem;background:linear-gradient(180deg,rgba(255,74,61,.07),transparent);border:1px solid var(--line);border-radius:1.2rem;padding:1.2rem 1.4rem}
+.where h3{margin-top:0;border-top:0;padding-top:0;color:var(--red)}
+.w-row{padding:.8rem 0;border-top:1px solid var(--line)}.w-row:first-of-type{border-top:0}
+.w-h{display:flex;flex-wrap:wrap;gap:.2rem .8rem;align-items:baseline}.w-h b{font:700 1.05rem var(--disp)}
+.w-chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem}
+.w-chip{display:inline-flex;flex-direction:column;border:1px solid var(--red);border-radius:.8rem;padding:.35rem .8rem;background:rgba(255,74,61,.1)}.w-chip b{font:700 1.05rem var(--disp)}.w-chip i{font-style:normal;color:var(--mute);font-size:.75rem}
+.w-chip.open{border:1px dashed var(--line);background:none}.w-chip.open i{font-size:.8rem}
+.w-note{color:var(--dim);font-size:.82rem;margin-top:.8rem}
 /* route cards */
 .cards{display:grid;gap:1rem}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:1.2rem;overflow:hidden;transition:border-color .2s}.card:hover{border-color:#3a4155}
@@ -105,6 +114,7 @@ h1,h2,h3,h4,h5,p,ul,ol{margin:0}ul,ol{padding:0;list-style:none}
 .places input{display:block;width:100%;margin:.6rem 0 0;background:var(--bg);border:1px solid var(--line);border-radius:.7rem;padding:.65rem .9rem;outline:0}.places input:focus{border-color:var(--red)}.places .primary{margin-top:.9rem}
 .notice{margin-top:2.2rem;color:var(--dim);font-size:.8rem;border-top:1px solid var(--line);padding-top:1rem}.notice b{color:var(--red)}
 .tabs{display:none}
+@media print{.where{background:#fff;border-color:#bbb}.w-chip{background:#fff;border-color:#c9342a}}
 
 html:not([lang="en"]) *{letter-spacing:0!important;text-transform:none!important}
 @media(max-width:900px){

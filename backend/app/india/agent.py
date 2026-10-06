@@ -258,10 +258,22 @@ def _apply(s: Session, slot, value):
 LAW_LABEL = {"hindu": "Hindu / Sikh / Jain / Buddhist", "muslim": "Muslim", "christian": "Christian", "parsi": "Parsi", "special_marriage": "Special Marriage Act"}
 
 
+def _ok_fact(k, v) -> bool:
+    """Is v an acceptable value for slot k? Intake output is checked with the same rules as a typed answer, so odd text can never become a 422."""
+    if k in NUMERIC: lo, hi = NUMERIC[k]; return isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= v <= hi
+    if k == "law": return v in LAWS
+    if k == "claimant": return v in OPTS["claimant"]
+    if k == "ground": return v is None or v in OPTS["ground"]
+    if k == "divorce_status": return v in OPTS["divorce_status"]
+    if k in BOOL_SLOTS: return isinstance(v, bool)
+    return False
+
+
 def _absorb(s: Session, r: dict):
     """Merge one intake result. Confident facts lock in; tentative suggestions never do (the user is still asked)."""
     for k, v in r["facts"].items():
-        if k == "needs": s.facts["needs"] = sorted(set(s.facts.get("needs", [])) | set(v))
+        if k == "needs": s.facts["needs"] = sorted(set(s.facts.get("needs", [])) | (set(v) & set(OPTS["needs"])))
+        elif not _ok_fact(k, v): continue            # e.g. "left 101 years ago": drop it and ask instead of failing
         else: s.facts[k] = v; s.known.add(k); s.tentative.pop(k, None); s.conflicts.pop(k, None)
     for k in r.get("not_needs", []):
         s.facts["needs"] = [n for n in s.facts.get("needs", []) if n != k]

@@ -236,3 +236,29 @@ def test_api_roundtrip_and_head_route():
     assert c.post("/api/india/agent", json={"session_id": j["session_id"], "snapshot": j["snapshot"], "answer": {"slot": "places", "value": {"marriage_place": "Chennai"}}}).status_code == 200
     assert c.post("/api/india/agent", json={"snapshot": "not-a-dict"}).status_code == 422          # shape errors are 422 with a reason
     assert c.head("/api/health").status_code in (200, 405)
+
+
+# ---- the 422 on odd durations, and venues for the claimant's own place
+@pytest.mark.parametrize("text", ["my husband left 101 years ago. Hindu wife needs maintenance", "I am Hindu wife, married 150 years, need divorce",
+                                  "Muslim wife left 2005 months ago and needs maintenance", "married 99999 saal, separated 5000 months, Hindu"])
+def test_absurd_durations_are_dropped_not_422(text):
+    r = A.step(text=text)
+    for _ in range(14):
+        if r["state"] != "clarify": break
+        q = r["question"]; v = q.get("selected") if q["kind"] == "multi" else q["options"][0]["value"] if q["kind"] == "choice" else False
+        r = A.step(r["session_id"], answer={"slot": q["slot"], "value": v}, snap=r["snapshot"])
+    assert r["state"] == "advice" and r["facts"].get("separated_months", 0) <= 1200 and r["facts"].get("marriage_years", 0) <= 100
+
+def test_s125_includes_the_wifes_own_residence():
+    v = {x["basis"]: x["place"] for x in rem(law="hindu", claimant="wife", needs=["maintenance"], petitioner_residence="Trichy", respondent_residence="Madurai")["crpc125"]["venues"]}
+    assert v["petitioner"] == "Trichy" and v["respondent"] == "Madurai"
+
+def test_places_produce_visible_forums_for_every_route():
+    r = A.step(text="I am a Hindu wife, he left, I need divorce and maintenance")
+    for _ in range(14):
+        if r["state"] != "clarify": break
+        q = r["question"]; v = q.get("selected") if q["kind"] == "multi" else q["options"][0]["value"] if q["kind"] == "choice" else False
+        r = A.step(r["session_id"], answer={"slot": q["slot"], "value": v}, snap=r["snapshot"])
+    r = A.step(r["session_id"], answer={"slot": "places", "value": {"petitioner_residence": "Trichy", "respondent_residence": "Madurai", "marriage_place": "Chennai"}}, snap=r["snapshot"])
+    placed = {rm["id"]: [v["place"] for v in rm["venues"] if v["place"]] for rm in r["advice"]["remedies"]}
+    assert all(placed[k] for k in placed if k not in ("hma_24_25", "hama_18")), placed
